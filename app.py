@@ -8,29 +8,49 @@ from statsmodels.tsa.arima.model import ARIMA
 # Function to load data from CSV files
 
 
-def load_data():
+def load_data(categories_file, vendors_file, product_names_file, products_file, product_ratings_file, orders_file):
     try:
-        vendors = pd.read_csv("vendors.csv")
-        products = pd.read_csv("products.csv")
-        product_ratings = pd.read_csv("product_ratings.csv")
-        product_names = pd.read_csv("product_names.csv")
-        orders = pd.read_csv("order.csv")
-        categories = pd.read_csv("categories.csv")
+        # Load CSV files
+        categories = pd.read_csv(categories_file)
+        vendors = pd.read_csv(vendors_file)
+        product_names = pd.read_csv(product_names_file)
+        products = pd.read_csv(products_file)
+        product_ratings = pd.read_csv(product_ratings_file)
+        orders = pd.read_csv(orders_file)
 
-        # Merging dataframes to get the desired structure
-        df = (orders[orders['deleted_at'].isnull()]
-              .merge(product_ratings, on='order_id', how='inner')
-              .merge(products, on='product_id', how='inner')
-              .merge(product_names, on='name_id', how='inner')
-              .merge(categories, left_on='category_id', right_on='category_id', how='inner')
-              .merge(vendors, on='vendor_id', how='inner'))
+        # Rename columns to remove trailing spaces
+        categories.rename(columns=lambda x: x.strip(), inplace=True)
+        vendors.rename(columns=lambda x: x.strip(), inplace=True)
+        product_names.rename(columns=lambda x: x.strip(), inplace=True)
+        products.rename(columns=lambda x: x.strip(), inplace=True)
+        product_ratings.rename(columns=lambda x: x.strip(), inplace=True)
+        orders.rename(columns=lambda x: x.strip(), inplace=True)
 
-        df = df.groupby(['name', 'phone'])['total_amount'].sum().reset_index()
-        df.columns = ['category_name', 'vendor_phone',
-                      'total_order_contribution']
-        return df
+        # Join tables to create the final dataset
+        data = (
+            product_names.merge(categories, how="left",
+                                left_on="category_id", right_on="category_id")
+            .merge(products, how="left", left_on="product_names_id", right_on="name_id")
+            .merge(vendors, how="left", left_on="vendor_id", right_on="vendor_id")
+            .merge(product_ratings, how="left", left_on="product_id", right_on="product_id")
+            .merge(orders, how="left", left_on="order_id", right_on="order_id")
+        )
+
+        # Filter out deleted orders
+        data = data[data["deleted_at"].isnull()]
+
+        # Calculate total order contribution
+        data = (
+            data.groupby(["name", "phone"])["total_amount"]
+            .sum()
+            .reset_index()
+            .rename(columns={"name": "category_name", "phone": "vendor_phone", "total_amount": "total_order_contribution"})
+        )
+
+        return data
+
     except Exception as e:
-        st.error(f"Error loading data from CSV files: {e}")
+        st.error(f"Error loading data: {e}")
         return pd.DataFrame()
 
 # Function to load cleaned data
@@ -44,8 +64,8 @@ def load_cleaned_data(file_path="orders_cleaned.csv"):
 
 def detect_anomalies(data):
     threshold = 3
-    data['z_score'] = (data['total_order_contribution'] -
-                       data['total_order_contribution'].mean()) / data['total_order_contribution'].std()
+    data['z_score'] = (data['total_amount'] -
+                       data['total_amount'].mean()) / data['total_amount'].std()
     anomalies = data[data['z_score'].abs() > threshold]
     return anomalies
 
@@ -56,7 +76,7 @@ st.set_page_config(page_title="Multi-Tab Dashboard", layout="wide")
 # Navigation sidebar
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Select a page:", [
-                        "Home", "Dynamic Heatmap", "Order Trends Forecasting", "Anomaly Detection"])
+    "Home", "Dynamic Heatmap", "Order Trends Forecasting", "Anomaly Detection"])
 
 # Home Page
 if page == "Home":
@@ -79,7 +99,14 @@ elif page == "Dynamic Heatmap":
 
     with col1:
         # Load data
-        data = load_data()
+        data = load_data(
+            "categories.csv",
+            "vendors.csv",
+            "product_names.csv",
+            "products.csv",
+            "product_ratings.csv",
+            "orders.csv",
+        )
 
         if not data.empty:
             # Filter by category
