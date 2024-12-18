@@ -10,27 +10,24 @@ from statsmodels.tsa.arima.model import ARIMA
 
 def load_data():
     try:
-        # Load all necessary CSV files
-        categories = pd.read_csv('categories.csv')
-        orders = pd.read_csv('order.csv')
-        product_names = pd.read_csv('product_names.csv')
-        product_ratings = pd.read_csv('product_ratings.csv')
-        vendors = pd.read_csv('vendors.csv')
+        vendors = pd.read_csv("vendors.csv")
+        products = pd.read_csv("products.csv")
+        product_ratings = pd.read_csv("product_ratings.csv")
+        product_names = pd.read_csv("product_names.csv")
+        orders = pd.read_csv("order.csv")
+        categories = pd.read_csv("categories.csv")
 
-        # Merge dataframes as needed (adjust according to your CSV structure)
-        df = (
-            orders
-            .merge(product_ratings, on='order_id', how='left')
-            .merge(product_names, on='product_id', how='left')
-            .merge(categories, on='category_id', how='left')
-            .merge(vendors, on='vendor_id', how='left')
-        )
+        # Merging dataframes to get the desired structure
+        df = (orders[orders['deleted_at'].isnull()]
+              .merge(product_ratings, on='order_id', how='inner')
+              .merge(products, on='product_id', how='inner')
+              .merge(product_names, on='name_id', how='inner')
+              .merge(categories, left_on='category_id', right_on='category_id', how='inner')
+              .merge(vendors, on='vendor_id', how='inner'))
 
-        # Group by category and vendor to calculate total order contributions
-        df = df.groupby(['category_name', 'vendor_phone']).agg(
-            total_order_contribution=('total_amount', 'sum')
-        ).reset_index()
-
+        df = df.groupby(['name', 'phone'])['total_amount'].sum().reset_index()
+        df.columns = ['category_name', 'vendor_phone',
+                      'total_order_contribution']
         return df
     except Exception as e:
         st.error(f"Error loading data from CSV files: {e}")
@@ -47,8 +44,8 @@ def load_cleaned_data(file_path="orders_cleaned.csv"):
 
 def detect_anomalies(data):
     threshold = 3
-    data['z_score'] = (data['total_amount'] -
-                       data['total_amount'].mean()) / data['total_amount'].std()
+    data['z_score'] = (data['total_order_contribution'] -
+                       data['total_order_contribution'].mean()) / data['total_order_contribution'].std()
     anomalies = data[data['z_score'].abs() > threshold]
     return anomalies
 
