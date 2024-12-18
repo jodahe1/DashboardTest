@@ -4,50 +4,36 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
-import psycopg2
 
-# Database configuration
-DB_CONFIG = {
-    'host': 'localhost',
-    'database': 'SQLTEST',
-    'user': 'postgres',
-    'password': 'Admin'
-}
-
-# Function to load data from PostgreSQL
+# Function to load data from CSV files
 
 
 def load_data():
     try:
-        with psycopg2.connect(**DB_CONFIG) as conn:
-            query = """
-            SELECT 
-                c.name AS category_name,
-                v.phone AS vendor_phone,
-                SUM(o.total_amount) AS total_order_contribution
-            FROM 
-                public.product_names pn
-            LEFT JOIN 
-                public.categories c ON pn.category_id = c.id
-            LEFT JOIN 
-                public.products p ON pn.id = p.name_id
-            LEFT JOIN 
-                public.vendors v ON p.vendor_id = v.id
-            JOIN 
-                public.product_ratings pr ON p.id = pr.product_id
-            JOIN 
-                public.orders o ON pr.order_id = o.id
-            WHERE 
-                o.deleted_at IS NULL
-            GROUP BY 
-                c.name, v.phone
-            ORDER BY 
-                c.name, v.phone;
-            """
-            df = pd.read_sql(query, conn)
+        # Load all necessary CSV files
+        categories = pd.read_csv('categories.csv')
+        orders = pd.read_csv('order.csv')
+        product_names = pd.read_csv('product_names.csv')
+        product_ratings = pd.read_csv('product_ratings.csv')
+        vendors = pd.read_csv('vendors.csv')
+
+        # Merge dataframes as needed (adjust according to your CSV structure)
+        df = (
+            orders
+            .merge(product_ratings, on='order_id', how='left')
+            .merge(product_names, on='product_id', how='left')
+            .merge(categories, on='category_id', how='left')
+            .merge(vendors, on='vendor_id', how='left')
+        )
+
+        # Group by category and vendor to calculate total order contributions
+        df = df.groupby(['category_name', 'vendor_phone']).agg(
+            total_order_contribution=('total_amount', 'sum')
+        ).reset_index()
+
         return df
     except Exception as e:
-        st.error(f"Error loading data from the database: {e}")
+        st.error(f"Error loading data from CSV files: {e}")
         return pd.DataFrame()
 
 # Function to load cleaned data
